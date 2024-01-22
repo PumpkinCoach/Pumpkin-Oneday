@@ -7,8 +7,10 @@ from boto3.dynamodb.conditions import Attr
 from slack_bolt import App
 from slack_bolt.adapter.aws_lambda import SlackRequestHandler
 
+BOT_TOKEN=os.environ['SLACK_BOT_TOKEN']
+
 app = App(
-    token=os.environ['SLACK_BOT_TOKEN'],
+    token=BOT_TOKEN,
     signing_secret=os.environ['SIGNING_SECRET'],
     process_before_response=True
 )
@@ -108,68 +110,65 @@ def enter_request(message, say):
 
 
 @app.action("mentor")
-def handle_match_yes(ack, body, say):
+def handle_match_yes(ack, body, say, client):
     ack()
-
-    say("매칭을 진행하기 위해 비밀번호를 입력해주세요.")
-
-    # 사용자 입력을 기다리는 모달을 생성
+    channel = body["channel"]["id"]
+    join_action_button_modal_ts = body["message"]["ts"]
+    client.chat_delete(token=BOT_TOKEN, channel=channel, ts=join_action_button_modal_ts)
+    
     say(
         {
-	"blocks": [
-		{
-			type: "modal",
-          callback_id: "morning_modal",
-          title: {
-            type: "plain_text",
-            text: "미라클 모닝 챌린지",
-          },
-          blocks: [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: "오늘의 문제.",
-              },
-            },
-            {
-              type: "input",
-              block_id: "question",
-              label: {
-                type: "plain_text",
-                text: "1 + 1 = ?",
-              },
-              element: {
-                type: "plain_text_input",
-                action_id: "answer",
-              },
-            },
-          ],
-          submit: {
-            type: "plain_text",
-            text: "Submit",
-          }
+            "type": "modal",
+	        "blocks": [
+		        {
+		            "type": "input",
+		            "block_id": "input_block",
+		            "element": {
+		                "type": "plain_text_input",
+		                "action_id": "password_input"
+		            },
+		            "label": {
+		                "type": "plain_text",
+		                "text": "비밀번호를 입력하세요."
+		            }
+		        },
+		        {
+                  "type": "actions",
+                  "block_id": "submit_button_block",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "제출"
+                      },
+                      "action_id": "check_password"
+                    }
+                  ]
+                }
+            ]
         }
     )
 
-
-
+    
 # 모달에서 전달된 입력값 확인 및 처리
 @app.action("check_password")
-def handle_password_modal_submission(ack, body, say):
+def check_password(ack, body, say, client):
     ack()
+    channel = body["channel"]["id"]
+    join_action_button_modal_ts = body["message"]["ts"]
+    client.chat_delete(token=BOT_TOKEN, channel=channel, ts=join_action_button_modal_ts)
+    
+    password_input = body["state"]["values"]["input_block"]["password_input"]["value"]
 
-    password_input = body['actions'][0]['value']
 
-
-    # 입력값이 "1234"인 경우에만 계속 진행
-    if password_input == "1234":
+    if password_input == os.environ['MENTOR_PASSWORD']:
         team = body["team"]["id"]
         user_id = body["user"]["id"]
         PK = f'one#{team}'
         SK = user_id
         
-        item = {'PK': PK, 'SK': SK, 'partner': 'null'}
+        item = {'PK': PK, 'SK': SK, 'partner': 'null', 'isMentor': 'true'}
         table.put_item(Item=item)
         say("매칭대기가 완료되었습니다 멘토님!! 매칭은 다음날부터 이뤄집니다.")
         
@@ -178,14 +177,19 @@ def handle_password_modal_submission(ack, body, say):
 
 
 @app.action("not_mentor")
-def handle_match_no(ack, body, say):
+def handle_match_no(ack, body, say, client):
     ack()
+    
+    channel = body["channel"]["id"]
+    join_action_button_modal_ts = body["message"]["ts"]
+    client.chat_delete(token=BOT_TOKEN, channel=channel, ts=join_action_button_modal_ts)
+    
     team = body["team"]["id"]
     user_id = body["user"]["id"]
     PK = f'one#{team}'
     SK = user_id
 
-    item = {'PK': PK, 'SK': SK, 'partner': 'null'}
+    item = {'PK': PK, 'SK': SK, 'partner': 'null', 'isMentor': 'false'}
     table.put_item(Item=item)
     say("매칭대기가 완료되었습니다! 매칭은 다음날부터 이뤄집니다.")
 
@@ -205,7 +209,7 @@ def stop_matching(message, say):
         say("대화를 종료하셨습니다. 자동으로 매칭 대기열에서도 제외되었습니다.")
     else:
         table.update_item(Key={'PK': PK, 'SK': response['Items'][0]['SK']},
-                          AttributeUpdates={'partner': {'Value': "null", 'Action': 'PUT'}})
+                    AttributeUpdates={'partner': {'Value': "null", 'Action': 'PUT'}})
         response = table.delete_item(Key={'PK': PK, 'SK': SK})
         say("대화를 종료하셨습니다. 자동으로 매칭 대기열에서도 제외되며 다시 대화하고 싶으시면 '!하루매칭대기' Command를 사용하세요.")
 
