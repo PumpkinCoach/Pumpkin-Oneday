@@ -27,7 +27,7 @@ def console_action_button(ack, say, client, body):
     channel = body["channel"]["id"]
     join_action_button_modal_ts = body["message"]["ts"]
     client.chat_delete(token=BOT_TOKEN, channel=channel, ts=join_action_button_modal_ts)
-    body["user_id"] = body["user"]["id"]
+    body["user_id"] = body['user']['id']
     print_console(ack,client,body)
 
 @app.command("/호박마차-하루")
@@ -142,7 +142,7 @@ def enter_request(ack, say, body, client):
     team = body['user']['team_id']
     
     PK = f'one#{team}'
-    SK = body['user']['id']
+    SK = body['channel']['id']
     
     query = {
         "FilterExpression": Attr('PK').eq(PK) & Attr('SK').eq(SK)
@@ -253,9 +253,8 @@ def check_password(ack, body, say, client):
 
     if password_input == os.environ['MENTOR_PASSWORD']:
         team = body["team"]["id"]
-        user_id = body["user"]["id"]
         PK = f'one#{team}'
-        SK = user_id
+        SK = body['channel']['id']
         query = {
         "FilterExpression": Attr('PK').eq(PK) & Attr('SK').eq(SK)
         }
@@ -282,7 +281,7 @@ def handle_match_no(ack, body, say, client):
     team = body['user']['team_id']
     
     PK = f'one#{team}'
-    SK = body['user']['id']
+    SK = body['channel']['id']
     query = {
         "FilterExpression": Attr('PK').eq(PK) & Attr('SK').eq(SK)
     }
@@ -306,7 +305,7 @@ def stop_matching(ack, message, say, body, client):
     
     team = body['user']['team_id']
     PK = f'one#{team}'
-    SK = body['user']['id']
+    SK = body['channel']['id']
     query = {
         "FilterExpression": Attr('PK').eq(PK) & Attr('SK').eq(SK)
     }
@@ -335,7 +334,7 @@ def stop_chat(ack, say, body, client):
     team = body['user']['team_id']
     
     PK = f'one#{team}'
-    SK = body['user']['id']
+    SK = body['channel']['id']
     
     query = {
         "FilterExpression": Attr('PK').eq(PK) & Attr('SK').eq(SK)
@@ -366,7 +365,7 @@ def mentor_number(ack, say, body, client):
     team = body['user']['team_id']
     
     PK = f'one#{team}'
-    SK = body['user']['id']
+    SK = body['channel']['id']
     
     query = {
         "FilterExpression": Attr('PK').eq(PK) & Attr('isMentor').eq("true") & Attr('inQueue').eq("true")
@@ -378,10 +377,11 @@ def mentor_number(ack, say, body, client):
     return
 
 @app.message()
-def chat_message(message, say):
+def chat_message(ack, message, say):
+    ack()
     team = message['team']
     PK = f'one#{team}'
-    SK = message['user']
+    SK = message['channel']
     
     query = {
         "FilterExpression": Attr('PK').eq(PK) & Attr('SK').eq(SK)
@@ -396,7 +396,9 @@ def chat_message(message, say):
             say("매칭되어있는 상대가 없습니다ㅜ0ㅜ ")
         else:
             text = message["text"]
-            say(text, channel=partner_info)
+            say(text, channel=partner_info, username='hun')
+        
+            
         
 
 def lambda_handler(event, context):
