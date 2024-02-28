@@ -6,8 +6,10 @@ from boto3.dynamodb.conditions import Key
 from boto3.dynamodb.conditions import Attr
 from slack_bolt import App
 from slack_bolt.adapter.aws_lambda import SlackRequestHandler
+import openai
 
 BOT_TOKEN=os.environ['SLACK_BOT_TOKEN']
+API_KEY = os.environ['PROD_GPT_API_KEY']
 
 app = App(
     token=BOT_TOKEN,
@@ -21,6 +23,9 @@ table = dynamodb.Table('inha-pumpkin-coach')
 
 SlackRequestHandler.clear_all_log_handlers()
 logging.basicConfig(format="%(asctime)s %(message)s", level=logging.DEBUG)
+
+def respond_to_slack_within_3_seconds(ack):
+    ack()
 
 @app.action("console_action_button") # 버튼 누를 시 콘솔 표시
 def console_action_button(ack, say, client, body):
@@ -41,7 +46,7 @@ def print_console(ack, client, body):
         			"type": "header",
         			"text": {
         				"type": "plain_text",
-        				"text": ":jack_o_lantern: Pumpkin-Topic :jack_o_lantern:"
+        				"text": ":jack_o_lantern: Pumpkin-Haru :jack_o_lantern:"
         			}
         		},
         		{
@@ -130,7 +135,129 @@ def print_console(ack, client, body):
 	        ]
 	        '''
     )
+    
+@app.action("gpt_action_button")
+def gpt_action_button(ack, say, client, body):
+    ack()
+    channel = body["channel"]["id"]
+    join_action_button_modal_ts = body["message"]["ts"]
+    client.chat_delete(token=BOT_TOKEN, channel=channel, ts=join_action_button_modal_ts)
+    
+    team = body['team']['id']
+    PK = f'one#{team}'
+    
+    query = {
+        "FilterExpression": Attr('PK').eq(PK) & Attr('SK').eq(channel)
+    }
+    response = table.scan(**query)
+    
+    partner_info = response['Items'][0]['partner']
+    if partner_info == "null":
+        say("매칭되어있는 상대가 없습니다ㅜ0ㅜ ")
+    else:
+        say(
+        {
+    	"blocks": [
+    		{
+    			"type": "divider"
+    		},
+    		{
+    			"type": "input",
+    			"element": {
+    				"type": "plain_text_input",
+    				"action_id": "plain_text_input_action"
+    			},
+    			"label": {
+    				"type": "plain_text",
+    				"text": "GPT에게 물어볼것을 입력해주세요."
+    			}
+    		},
+    		{
+    			"type": "actions",
+    			"elements": [
+    				{
+    					"type": "button",
+    					"text": {
+    						"type": "plain_text",
+    						"text": "입력"
+    					},
+    					"value": "gpt_action",
+    					"action_id": "gpt_action"
+    				},
+    				{
+    					"type": "button",
+    					"text": {
+    						"type": "plain_text",
+    						"text": "콘솔 열기"
+    					},
+    					"value": "console_action_button",
+    					"action_id": "console_action_button"
+    				}
+    			]
+    		}
+    	]
+    }
+    )
 
+def chatgpt_response(say, client, body):
+    channel = body["channel"]["id"]
+    join_action_button_modal_ts = body["message"]["ts"]
+    client.chat_delete(token=BOT_TOKEN, channel=channel, ts=join_action_button_modal_ts)
+    input_data = body["state"]["values"]["yCY/2"]["plain_text_input_action"]["value"]
+    
+    # OpenAI API 키를 설정합니다
+    openai.api_key = API_KEY
+    
+    # OpenAI를 사용하여 텍스트를 생성합니다
+    response = openai.ChatCompletion.create(
+        model="gpt-4-1106-preview",
+        messages=[
+            {"role": "system", "content": "You are a software engineer, and you have to answer people's questions concisely and accurately."},
+            {"role": "user", "content": input_data}
+        ],
+        temperature=0.5,
+        max_tokens=512,
+        top_p=1,
+        frequency_penalty=0,
+        presence_penalty=0
+    )
+    answer = response['choices'][0]['message']['content']
+    say(
+        {
+    	"blocks": [
+    		{
+    			"type": "divider"
+    		},
+    		{
+			    "type": "section",
+			    "text": {
+				    "type": "mrkdwn",
+				    "text": f'*답변 : * {answer}'
+			    }
+		    },
+    		{
+    			"type": "actions",
+    			"elements": [
+    				{
+    					"type": "button",
+    					"text": {
+    						"type": "plain_text",
+    						"text": "콘솔 열기"
+    					},
+    					"value": "console_action_button",
+    					"action_id": "console_action_button"
+    				}
+    			]
+    		}
+    	]
+    }
+    )
+
+
+app.action("gpt_action")(
+    ack=respond_to_slack_within_3_seconds,
+    lazy=[chatgpt_response]
+)
 
 # 매칭대기열 등록
 @app.action("register_match")
@@ -392,11 +519,12 @@ def chat_message(ack, message, say):
         say("참가를 원하시면 /호박마차-하루 Command -> [하루매칭대기]를 클릭하세요. 매칭은 현재 시간 기준으로 다음 날 이뤄집니다.")
     else:
         partner_info = response['Items'][0]['partner']
+        
         if partner_info == "null":
             say("매칭되어있는 상대가 없습니다ㅜ0ㅜ ")
         else:
             text = message["text"]
-            say(text, channel=partner_info, username='hun')
+            say(text, channel=partner_info, username = response['Items'][0]['nickName'])
         
             
         
